@@ -1,27 +1,26 @@
-Here is the translation of your file while maintaining the original .md formatting:
 
----
-title: Enabling SSL in Marzban
----
 
-# Enabling SSL in Marzban
+### Enabling SSL in Marzban
 
-By enabling SSL in Marzban, the dashboard and subscription link will be accessible via HTTPS. There are different approaches to enabling SSL in Marzban, and we will explain three methods below, ordered from simplest to most complex.
+By enabling SSL in Marzban, the dashboard and subscription links will be accessible via HTTPS. Below are three methods for enabling SSL in Marzban, ordered from simplest to most complex.
 
 ::: tip Note
-In all examples below, the `docker-compose.yml` and `.env` files can be found in the `/opt/marzban‍‍‍` directory, and the `xray_config.json` file is in the `/var/lib/marzban` directory.
+In all the examples below:
+- The `docker-compose.yml` and `.env` files can be found in the `/opt/marzban` directory.
+- The `xray_config.json` file can be found in the `/var/lib/marzban` directory.
 
-If you installed Marzban manually, you must make the necessary changes yourself.
+If you installed Marzban manually, you must make the required changes yourself.
 :::
 
-## Enabling SSL with Caddy
+---
 
-In this method, you don't need to create an SSL certificate; Caddy handles everything for you!
+### Enabling SSL with Caddy
 
-- Modify the `docker-compose.yml` file as follows:
+In this method, you don’t need to create an SSL certificate—Caddy will handle everything for you.
 
-::: code-group
-```yml{9-10,12-22,24-25} [docker-compose.yml]
+1. Modify the `docker-compose.yml` file as follows:
+
+```yml
 services:
   marzban:
     image: gozargah/marzban:latest
@@ -47,73 +46,86 @@ services:
 
 volumes:
   caddy_volume:
+```
 
-:::
-	•	Create a new file named Caddyfile in the /opt/marzban directory and replace YOUR_DOMAIN with your desired domain or subdomain.
+2. Create a new file named `Caddyfile` in the `/opt/marzban` directory. Replace `YOUR_DOMAIN` with your desired domain or subdomain.
 
 ::: warning Note
-The first letter in the filename Caddyfile must be uppercase.
+The file name must begin with a capital `C`.
 :::
 
-::: code-group
-
+```caddy
 YOUR_DOMAIN {
-	reverse_proxy unix//var/lib/marzban/marzban.socket
+    reverse_proxy unix//var/lib/marzban/marzban.socket
 }
-:::
+```
 
 ::: warning Note
-If the domain or subdomain for the subscription differs from the panel, duplicate the above content in your Caddyfile and replace `YOUR_DOMAIN` with both domains or subdomains.
+If the subscription domain/subdomain is different from the panel domain, add the configuration for both domains in the `Caddyfile`.
 :::
 
-- Set the following variables in the `.env` file.
-
-Replace `YOUR_DOMAIN` with your desired domain or subdomain.
+3. Update the following variables in the `.env` file. Replace `YOUR_DOMAIN` with your domain or subdomain:
 
 ```env
-UVICORN_UDS = /var/lib/marzban/marzban.socket
-XRAY_SUBSCRIPTION_URL_PREFIX = https://YOUR_DOMAIN
+UVICORN_UDS=/var/lib/marzban/marzban.socket
+XRAY_SUBSCRIPTION_URL_PREFIX=https://YOUR_DOMAIN
+```
 
-	•	Restart Marzban.
+4. Restart Marzban:
 
+```bash
 marzban restart
+```
 
-Now, the Marzban dashboard will be accessible via HTTPS at your domain or subdomain.
+Your Marzban dashboard will now be accessible via HTTPS at your domain or subdomain.
 
-Enabling SSL with Uvicorn
+---
 
-Marzban uses Uvicorn by default. Additionally, Uvicorn allows you to define SSL certificate files.
-	•	First, obtain certificate files for your domain or subdomain. For this, see the SSL Certificate Creation guide.
-	•	After creating the SSL certificate files, set the following variables in the .env file.
+### Enabling SSL with Uvicorn
 
-Replace YOUR_DOMAIN with your desired domain or subdomain.
+Marzban runs using `Uvicorn` by default, which also supports SSL certificate configuration.
 
-UVICORN_PORT = 443
-UVICORN_SSL_CERTFILE = "/var/lib/marzban/certs/YOUR_DOMAIN.cer"
-UVICORN_SSL_KEYFILE = "/var/lib/marzban/certs/YOUR_DOMAIN.cer.key"
-XRAY_SUBSCRIPTION_URL_PREFIX = https://YOUR_DOMAIN
+1. Obtain the SSL certificate files for your domain or subdomain. See the guide on [Issuing an SSL Certificate](issue-ssl-certificate.md).
 
-Now, the Marzban dashboard will be accessible via HTTPS at your domain or subdomain.
+2. After obtaining the SSL certificate files, update the following variables in the `.env` file. Replace `YOUR_DOMAIN` with your domain or subdomain:
 
-Enabling SSL with HAProxy
+```env
+UVICORN_PORT=443
+UVICORN_SSL_CERTFILE="/var/lib/marzban/certs/YOUR_DOMAIN.cer"
+UVICORN_SSL_KEYFILE="/var/lib/marzban/certs/YOUR_DOMAIN.cer.key"
+XRAY_SUBSCRIPTION_URL_PREFIX=https://YOUR_DOMAIN
+```
 
-HAProxy is one of the best tools for this task. In this method, Marzban is run with HTTPS using HAProxy.
-	•	First, obtain certificate files for your domain or subdomain. For this, see the SSL Certificate Creation guide.
-	•	Modify the docker-compose.yml file as follows:
+3. Restart Marzban:
 
-::: code-group
+```bash
+marzban restart
+```
 
+Your Marzban dashboard will now be accessible via HTTPS at your domain or subdomain.
+
+---
+
+### Enabling SSL with HAProxy
+
+`HAProxy` is a robust tool for enabling HTTPS. In this method, Marzban is configured to use `HAProxy` for HTTPS.
+
+1. Obtain the SSL certificate files for your domain or subdomain. See the guide on [Issuing an SSL Certificate](issue-ssl-certificate.md).
+
+2. Modify the `docker-compose.yml` file as follows:
+
+```yml
 services:
   marzban:
-      image: gozargah/marzban:latest
-      restart: always
-      env_file: .env
-      network_mode: host
-      volumes:
-        - /var/lib/marzban:/var/lib/marzban
-      depends_on:
-        - haproxy
-    
+    image: gozargah/marzban:latest
+    restart: always
+    env_file: .env
+    network_mode: host
+    volumes:
+      - /var/lib/marzban:/var/lib/marzban
+    depends_on:
+      - haproxy
+
   haproxy:
     image: haproxy:latest
     restart: always
@@ -123,12 +135,11 @@ services:
     ports:
       - 80:80
       - 443:443
+```
 
-:::
-	•	Create a new file named haproxy.cfg in the /opt/marzban directory and replace YOUR_DOMAIN with your desired domain or subdomain.
+3. Create a new file named `haproxy.cfg` in the `/opt/marzban` directory. Replace `YOUR_DOMAIN` with your desired domain or subdomain:
 
-::: code-group
-
+```cfg
 defaults
   mode tcp
   timeout client 30s
@@ -149,20 +160,19 @@ frontend https_frontend
 
 backend marzban_backend
   server marzban /var/lib/marzban/marzban.socket
-:::
+```
 
-- Set the following variables in the `.env` file.
-
-Replace `YOUR_DOMAIN` with your desired domain or subdomain.
+4. Update the following variables in the `.env` file. Replace `YOUR_DOMAIN` with your domain or subdomain:
 
 ```env
-UVICORN_UDS = /var/lib/marzban/marzban.socket
-XRAY_SUBSCRIPTION_URL_PREFIX = https://YOUR_DOMAIN
+UVICORN_UDS=/var/lib/marzban/marzban.socket
+XRAY_SUBSCRIPTION_URL_PREFIX=https://YOUR_DOMAIN
+```
 
-	•	Restart Marzban.
+5. Restart Marzban:
 
+```bash
 marzban restart
+```
 
-Now, the Marzban dashboard will be accessible via HTTPS at your domain or subdomain.
-
-Let me know if there are any further adjustments or clarifications needed!
+Your Marzban dashboard will now be accessible via HTTPS at your domain or subdomain.
