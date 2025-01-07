@@ -4,8 +4,7 @@
 
 By enabling SSL in Marzban, the dashboard and subscription links will be accessible via HTTPS. Below are three methods for enabling SSL in Marzban, ordered from simplest to most complex.
 
-:::
-tip Note
+::: tip Note
 In all the examples below:
 - The `docker-compose.yml` and `.env` files can be found in the `/opt/marzban` directory.
 - The `xray_config.json` file can be found in the `/var/lib/marzban` directory.
