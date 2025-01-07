@@ -1,98 +1,186 @@
+```
+title: Activating SSL in Marzban
 ---
-title: ساخت گواهی SSL
----
 
-# ساخت گواهی SSL
-آموزش های پایین مربوط به دریافت گواهی SSL برای استفاده در مرزبان است.
+# Activating SSL in Marzban
 
-::: warning توجه
-فایل های گواهی باید در آدرس `/var/lib/marzban/certs` در دسترس باشند تا مرزبان بتواند به آنها دسترسی داشته باشد.
+By activating SSL in Marzban, the dashboard and subscription link will be accessible via https.
+There are different approaches to activating SSL in Marzban, which are mentioned below in three methods, in order from simple to complex.
 
-در تمام مثال های پایین، فایل ها در این آدرس نصب خواهند شد.
+::: tip Note
+In all the examples below, the `docker-compose.yml` and `.env` files can be found in the `/opt/marzban` path, and `xray_config.json` can be found in the `/var/lib/marzban` path.
+
+If you have installed Marzban manually, you must make the required changes yourself.
 :::
 
-::: warning توجه
-شما باید قبل از اقدام به دریافت گواهی SSL، رکورد های DNS دامنه را ثبت کرده باشید.
+
+## Activating SSL with Caddy
+
+In this method, you do not need to create an SSL certificate; Caddy does all the work for you!
+
+
+- Change the `docker-compose.yml` file as follows.
+
+::: code-group
+```yml{9-10,12-22,24-25} [docker-compose.yml]
+services:
+  marzban:
+    image: gozargah/marzban:latest
+    restart: always
+    env_file: .env
+    network_mode: host
+    volumes:
+      - /var/lib/marzban:/var/lib/marzban
+    depends_on:
+      - caddy
+
+  caddy:
+    image: caddy
+    restart: always
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - /var/lib/marzban:/var/lib/marzban
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_volume:/data
+      - caddy_volume:/config
+
+volumes:
+  caddy_volume:
+```
 :::
 
-## دریافت گواهی با acme.sh
+- Create a new file named `Caddyfile` in the `/opt/marzban` path and change `YOUR_DOMAIN` to your desired domain or subdomain.
 
-- به دلیل استفاده از روش standalone با دستور زیر socat را نصب کتید.
+::: warning Attention
+The first letter in the `Caddyfile` filename must be a capital `C`.
+:::
+
+::: code-group
+```caddy [Caddyfile]
+YOUR_DOMAIN {
+    reverse_proxy unix//var/lib/marzban/marzban.socket
+}
+:::
+
+
+::: warning Attention
+If you want the subscription domain or subdomain to be different from the panel, place the above content twice in your Caddyfile and put both domains or subdomains instead of `YOUR_DOMAIN`.
+:::
+
+- Set the following variables in the `.env` file.
+
+Change `YOUR_DOMAIN` to your desired domain or subdomain.
+
+```env
+UVICORN_UDS = /var/lib/marzban/marzban.socket
+XRAY_SUBSCRIPTION_URL_PREFIX = https://YOUR_DOMAIN
+```
+
+- Restart Marzban.
 
 ```bash
-apt install curl socat -y
+marzban restart
 ```
 
-::: tip نکته
-در صورتی که socat را قبلا نصب کرده‌اید، دیگر نیازی به انجام این مرحله نیست.
+Now the Marzban dashboard will be available at your domain or subdomain address via https.
+
+
+## Activating SSL with Uvicorn
+
+Marzban is run by default with `Uvicorn`. `Uvicorn` also allows you to define SSL certificate files.
+
+- To start, you need to obtain the certificate files for your domain or subdomain. To do this, see the [Creating SSL Certificate](issue-ssl-certificate.md) tutorial.
+
+- After creating the SSL certificate files, set the following variables in the `.env` file.
+
+Change `YOUR_DOMAIN` to your desired domain or subdomain.
+
+```env
+UVICORN_PORT = 443
+UVICORN_SSL_CERTFILE = "/var/lib/marzban/certs/YOUR_DOMAIN.cer"
+UVICORN_SSL_KEYFILE = "/var/lib/marzban/certs/YOUR_DOMAIN.cer.key"
+XRAY_SUBSCRIPTION_URL_PREFIX = https://YOUR_DOMAIN
+```
+
+Now the Marzban dashboard will be available at your domain or subdomain address via https.
+
+
+## Activating SSL with HAProxy
+
+`HAProxy` is one of the best tools for this. In this method, we run Marzban with `HAProxy` over https.
+
+- To start, you need to obtain the certificate files for your domain or subdomain. To do this, see the [Creating SSL Certificate](issue-ssl-certificate.md) tutorial.
+
+
+- Change the `docker-compose.yml` file as follows.
+
+::: code-group
+```yml{9-10,12-20} [docker-compose.yml]
+services:
+  marzban:
+      image: gozargah/marzban:latest
+      restart: always
+      env_file: .env
+      network_mode: host
+      volumes:
+        - /var/lib/marzban:/var/lib/marzban
+      depends_on:
+        - haproxy
+    
+  haproxy:
+    image: haproxy:latest
+    restart: always
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg
+      - /var/lib/marzban:/var/lib/marzban
+    ports:
+      - 80:80
+      - 443:443
+```
 :::
 
-- با دستور زیر، [acme.sh](https://github.com/acmesh-official/acme.sh) را نصب کنید.
+- Create a new file named `haproxy.cfg` in the `/opt/marzban` path and change `YOUR_DOMAIN` to your desired domain or subdomain.
 
-`YOUR_EMAIL` را به ایمیل خود تغییر دهید.
+::: code-group
+```cfg [haproxy.cfg]
+defaults
+  mode tcp
+  timeout client 30s
+  timeout connect 4s
+  timeout server 30s
 
-::: tip نکته
-در صورتی که acme.sh را قبلا نصب کرده‌اید، دیگر نیازی به انجام این مرحله نیست.
+global
+  maxconn 10000000
+
+frontend http_frontend
+  bind *:80
+  mode http
+  redirect scheme https code 301 if !{ ssl_fc }
+
+frontend https_frontend
+  bind *:443 ssl crt /var/lib/marzban/certs/YOUR_DOMAIN.cer
+  default_backend marzban_backend
+
+backend marzban_backend
+  server marzban /var/lib/marzban/marzban.socket
 :::
 
+- Set the following variables in the `.env` file.
+
+Change `YOUR_DOMAIN` to your desired domain or subdomain.
+
+```env
+UVICORN_UDS = /var/lib/marzban/marzban.socket
+XRAY_SUBSCRIPTION_URL_PREFIX = https://YOUR_DOMAIN
+```
+
+- Restart Marzban.
+
 ```bash
-curl https://get.acme.sh | sh -s email=YOUR_EMAIL
+marzban restart
 ```
 
-- برای دریافت گواهی، دستورات زیر را به ترتیب اجرا کنید.
-
-`YOUR_DOMAIN` را به دامنه یا ساب‌دامنه‌ی مورد نظر خود تغییر دهید.
-
-```bash
-
-export DOMAIN=YOUR_DOMAIN
-
-mkdir -p /var/lib/marzban/certs
-
-~/.acme.sh/acme.sh \
-  --issue --force --standalone -d "$DOMAIN" \
-  --fullchain-file "/var/lib/marzban/certs/$DOMAIN.cer" \
-  --key-file "/var/lib/marzban/certs/$DOMAIN.cer.key"
-
+Now the Marzban dashboard will be available at your domain or subdomain address via https.
 ```
-
-## دریافت گواهی دامنه ثبت شده بر کلودفلر
-
-- اگر دامنه بر روی کلودفلر ثبت شده و روش های بالا پاسخگو نبود، از حالت دستی استفاده کنید
-
-  `example.com` را به دامنه خود تغییر دهید
-
-  - بعد از نصب acme مراحل زیر را اجرا کنید
- 
-```
-curl https://get.acme.sh
-```
-
-1. قدم اول:
-```
-~/.acme.sh/acme.sh --issue -d example.com --dns \
- --yes-I-know-dns-manual-mode-enough-go-ahead-please
-```
-- بعد از اجرا دو مقدار مانند عکس زیر به شما داده میشود
-
-  ![image](https://github.com/Gozargah/gozargah.github.io/assets/67644313/538c8341-fa77-4b06-96a4-73c29f3e0ded)
-
-2. قدم دوم:
-به کلودفلر رفته و یک رکورد از تایپ txt ایجاد کنید و مقادیر را مانند عکس زیر وارد کنید
-
-![image](https://github.com/Gozargah/gozargah.github.io/assets/67644313/dad9c59a-da1f-440b-aa6e-ad524aff212a)
-
-3. قدم سوم:
-  با دستور زیر سرتیفیکیت را دریافت کنید
-```
-~/.acme.sh/acme.sh --renew -d example.com \
-  --yes-I-know-dns-manual-mode-enough-go-ahead-please
-```
-
-- در آخر فایل سرتیفیکیت دامین شما در آدرس زیر
-
-`/root/.acme.sh/example.com_ecc/fullchain.cer`
-
-- و فایل پرایوت کی در آدرس زیر ذخیره میشود
-
-`/root/.acme.sh/example.com_ecc/example.com.key`
